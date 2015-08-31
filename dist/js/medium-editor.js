@@ -427,6 +427,18 @@ MediumEditor.extensions = {};
         return dest;
     }
 
+    // https://developer.mozilla.org/en-US/docs/Web/API/Node/contains
+    // Some browsers (including phantom) don't return true for Node.contains(child)
+    // if child is a text node.  Detect these cases here and use a fallback
+    // for calls to Util.isDescendant()
+    var nodeContainsWorksWithTextNodes = false;
+    try {
+        var testParent = document.createElement('div'),
+            testText = document.createTextNode(' ');
+        testParent.appendChild(testText);
+        nodeContainsWorksWithTextNodes = testParent.contains(testText);
+    } catch (exc) {}
+
     var Util = {
 
         // http://stackoverflow.com/questions/17907445/how-to-detect-ie11#comment30165888_17907562
@@ -644,6 +656,9 @@ MediumEditor.extensions = {};
             }
             if (checkEquality && parent === child) {
                 return true;
+            }
+            if (nodeContainsWorksWithTextNodes || child.nodeType !== 3) {
+                return parent.contains(child);
             }
             var node = child.parentNode;
             while (node !== null) {
@@ -4647,11 +4662,21 @@ LINK_REGEXP_TEXT =
          */
         updateOnEmptySelection: false,
 
+        /* relativeContainer: [node]
+         * appending the toolbar to a given node instead of body
+         */
+        relativeContainer: null,
+
         init: function () {
             MediumEditor.Extension.prototype.init.apply(this, arguments);
 
             this.initThrottledMethods();
-            this.getEditorOption('elementsContainer').appendChild(this.getToolbarElement());
+
+            if (!this.relativeContainer) {
+                this.getEditorOption('elementsContainer').appendChild(this.getToolbarElement());
+            } else {
+                this.relativeContainer.appendChild(this.getToolbarElement());
+            }
         },
 
         // Helper method to execute method for every extension, but ignoring the toolbar extension
@@ -4674,6 +4699,8 @@ LINK_REGEXP_TEXT =
 
             if (this.static) {
                 toolbar.className += ' static-toolbar';
+            } else if (this.relativeContainer) {
+                toolbar.className += ' medium-editor-relative-toolbar';
             } else {
                 toolbar.className += ' medium-editor-stalker-toolbar';
             }
@@ -5083,12 +5110,16 @@ LINK_REGEXP_TEXT =
                 return this;
             }
 
-            if (this.static) {
+            if (this.static && !this.relativeContainer) {
                 this.showToolbar();
                 this.positionStaticToolbar(container);
             } else if (!selection.isCollapsed) {
                 this.showToolbar();
-                this.positionToolbar(selection);
+
+                // we don't need any absolute positioning if relativeContainer is set
+                if (!this.relativeContainer) {
+                    this.positionToolbar(selection);
+                }
             }
 
             anchorPreview = this.base.getExtensionByName('anchor-preview');
